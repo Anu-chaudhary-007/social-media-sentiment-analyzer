@@ -1,75 +1,66 @@
-import os
+import streamlit as st
 import pandas as pd
-import torch
+from transformers import pipeline
 import matplotlib.pyplot as plt
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, TextClassificationPipeline
 
-# Load model and tokenizer
-model_name = "distilbert-base-uncased-finetuned-sst-2-english"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
+# Load sentiment analysis pipeline
+sentiment_analyzer = pipeline("sentiment-analysis")
 
-# Use CPU if GPU not available
-device = 0 if torch.cuda.is_available() else -1
-print(f"Device set to use {'GPU' if device == 0 else 'CPU'}")
+st.set_page_config(page_title="Social Media Sentiment Analyzer", layout="wide")
 
-pipeline = TextClassificationPipeline(model=model, tokenizer=tokenizer, device=device)
+st.title("🔍 Social Media Sentiment Analyzer")
 
+# Choose input type
+input_type = st.radio("Select Input Type:", ["Single Text", "CSV File"])
 
-def analyze_sentiment(text):
-    """Analyze sentiment for a single text"""
-    result = pipeline(text)[0]
-    return {
-        "text": text,
-        "label": result["label"],
-        "score": round(result["score"] * 100, 2)
-    }
+if input_type == "Single Text":
+    text = st.text_area("Enter text here:")
+    if st.button("Analyze"):
+        if text.strip() != "":
+            result = sentiment_analyzer(text)[0]
+            st.subheader("📊 Analysis Result")
+            st.write(f"**Text**   : {text}")
+            st.write(f"**Label**  : {result['label']}")
+            st.write(f"**Score**  : {result['score']*100:.2f}%")
+        else:
+            st.warning("⚠️ Please enter some text.")
 
+elif input_type == "CSV File":
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
 
-def analyze_csv(file_path):
-    """Analyze sentiment for a CSV file and show chart"""
-    try:
-        df = pd.read_csv(file_path)
+        if "text" not in df.columns:
+            st.error("CSV must have a column named **text** ❌")
+        else:
+            st.write("📄 Preview of Uploaded File")
+            st.dataframe(df.head())
 
-        if 'text' not in df.columns:
-            print("❌ CSV must have a column named 'text'")
-            return
+            if st.button("Analyze All"):
+                # Run sentiment analysis on all rows
+                results = sentiment_analyzer(df["text"].tolist())
 
-        results = []
-        for txt in df['text']:
-            sentiment = analyze_sentiment(str(txt))
-            results.append(sentiment)
+                df["label"] = [r["label"] for r in results]
+                df["score"] = [r["score"] for r in results]
 
-        result_df = pd.DataFrame(results)
-        output_path = "output_sentiment.csv"
-        result_df.to_csv(output_path, index=False)
+                st.subheader("📊 Analysis Results")
+                st.dataframe(df)
 
-        print(f"✅ Analysis complete! Results saved to {output_path}")
+                # Sentiment distribution
+                sentiment_counts = df["label"].value_counts()
 
-        # --- Visualization ---
-        counts = result_df['label'].value_counts()
-        counts.plot(kind='bar', color=['green', 'red', 'blue'])
-        plt.title("Sentiment Distribution")
-        plt.xlabel("Sentiment")
-        plt.ylabel("Count")
-        plt.show()
+                fig, ax = plt.subplots()
+                sentiment_counts.plot.pie(autopct="%.2f%%", ax=ax, ylabel="")
+                st.pyplot(fig)
 
-    except Exception as e:
-        print(f"⚠️ Error processing CSV: {e}")
+                # Download option
+                csv = df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "⬇️ Download Results as CSV",
+                    data=csv,
+                    file_name="sentiment_results.csv",
+                    mime="text/csv",
+                )
 
-
-if __name__ == "__main__":
-    print("🔍 Social Media Sentiment Analyzer")
-    user_input = input("Enter text or CSV file path: ")
-
-    if os.path.isfile(user_input) and user_input.endswith(".csv"):
-        analyze_csv(user_input)
-    else:
-        result = analyze_sentiment(user_input)
-        print("\n📊 Analysis Result")
-        print("------------------------------")
-        print(f"Text   : {result['text']}")
-        print(f"Label  : {result['label']} {'✅' if result['label']=='POSITIVE' else '❌'}")
-        print(f"Score  : {result['score']}%")
 
 
