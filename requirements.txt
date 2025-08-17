@@ -1,0 +1,9 @@
+transformers
+torch
+plotly
+dash
+tweepy
+pandas
+textblob
+flask
+
