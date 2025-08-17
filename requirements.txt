@@ -6,4 +6,4 @@ tweepy
 pandas
 textblob
 flask
-
+streamlit
