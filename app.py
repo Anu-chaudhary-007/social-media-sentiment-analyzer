@@ -1,66 +1,69 @@
 import streamlit as st
 from transformers import pipeline
 import matplotlib.pyplot as plt
-import pandas as pd
-import json
 
-# Load sentiment analysis model (3-class: pos, neu, neg)
+# Load sentiment analysis pipeline (CPU only)
 sentiment_pipeline = pipeline(
     "sentiment-analysis",
-    model="cardiffnlp/twitter-roberta-base-sentiment-latest"
+    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+    device=-1
 )
 
-# Streamlit App
-st.title("🌐 Web App Sentiment Analyzer")
-st.write("Enter text and see if it's Positive, Negative, or Neutral with confidence scores.")
+st.title("📊 Social Media Sentiment Analyzer")
+st.write("This app analyzes the sentiment of your text (Positive, Negative, Neutral).")
 
-text = st.text_area("Enter your text here:")
+# Text input
+user_input = st.text_area("Enter your text here:")
 
-if st.button("Analyze"):
-    results = sentiment_pipeline(text)
+if st.button("Analyze Sentiment"):
+    if user_input.strip():
+        # Split input into sentences
+        sentences = [s.strip() for s in user_input.replace("?", ".").replace("!", ".").split(".") if s.strip()]
 
-    # Extract labels and scores
-    labels = [res['label'] for res in results]
-    scores = [res['score'] for res in results]
+        results = sentiment_pipeline(sentences)
 
-    # Convert results into DataFrame for export
-    df = pd.DataFrame({"Sentiment": labels, "Confidence": scores})
+        sentiment_counts = {"positive": 0, "negative": 0, "neutral": 0}
 
-    # Show results
-    st.subheader("📊 Analysis Result")
-    for label, score in zip(labels, scores):
-        st.write(f"**{label}:** {score*100:.2f}%")
+        for sentence, result in zip(sentences, results):
+            label = result["label"].lower()
+            score = round(result["score"], 4)
 
-    # --- Visualization ---
-    st.subheader("📈 Sentiment Confidence")
-    fig, ax = plt.subplots()
-    ax.bar(labels, scores, color=["green", "gray", "red"])  # order: pos, neu, neg
-    ax.set_ylabel("Confidence")
-    ax.set_ylim(0, 1)
+            if label == "positive":
+                color = "#4CAF50"  # green
+            elif label == "negative":
+                color = "#F44336"  # red
+            else:
+                color = "#FF9800"  # orange (neutral)
 
-    # Add percentages on bars
-    for i, v in enumerate(scores):
-        ax.text(i, v + 0.02, f"{v*100:.1f}%", ha="center")
+            # Update counts
+            if label in sentiment_counts:
+                sentiment_counts[label] += 1
 
-    st.pyplot(fig)
+            # Show each sentence result
+            st.markdown(f"**Sentence:** {sentence}")
+            st.markdown(f"<h4 style='color:{color};'>Sentiment: {label.capitalize()}</h4>", unsafe_allow_html=True)
 
-    # --- Download buttons ---
-    st.subheader("⬇️ Download Results")
+            # Custom progress bar
+            progress_html = f"""
+            <div style="border: 1px solid #ddd; border-radius: 8px; width: 100%; height: 20px;">
+                <div style="background-color:{color}; width:{score*100}%; height:100%; border-radius: 8px;"></div>
+            </div>
+            <p style="text-align:center;">Confidence: {score*100:.1f}%</p>
+            """
+            st.markdown(progress_html, unsafe_allow_html=True)
+            st.write("---")
 
-    # CSV
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="Download as CSV",
-        data=csv,
-        file_name="sentiment_results.csv",
-        mime="text/csv"
-    )
+        # Show pie chart summary
+        st.subheader("📈 Overall Sentiment Distribution")
+        fig, ax = plt.subplots()
+        ax.pie(
+            sentiment_counts.values(),
+            labels=[k.capitalize() for k in sentiment_counts.keys()],
+            autopct='%1.1f%%',
+            colors=["#4CAF50", "#F44336", "#FF9800"]
+        )
+        ax.axis("equal")
+        st.pyplot(fig)
 
-    # JSON
-    json_data = df.to_json(orient="records", indent=2)
-    st.download_button(
-        label="Download as JSON",
-        data=json_data,
-        file_name="sentiment_results.json",
-        mime="application/json"
-    )
+    else:
+        st.warning("⚠️ Please enter some text to analyze.")
