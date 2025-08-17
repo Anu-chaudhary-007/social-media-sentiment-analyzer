@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
@@ -49,9 +50,19 @@ elif input_type == "CSV File":
                 # Sentiment distribution
                 sentiment_counts = df["label"].value_counts()
 
-                fig, ax = plt.subplots()
-                sentiment_counts.plot.pie(autopct="%.2f%%", ax=ax, ylabel="")
-                st.pyplot(fig)
+                # Pie chart
+                st.subheader("🍩 Sentiment Distribution (Pie Chart)")
+                fig1, ax1 = plt.subplots()
+                sentiment_counts.plot.pie(autopct="%.2f%%", ax=ax1, ylabel="")
+                st.pyplot(fig1)
+
+                # Bar chart
+                st.subheader("📊 Sentiment Distribution (Bar Chart)")
+                fig2, ax2 = plt.subplots()
+                sentiment_counts.plot.bar(ax=ax2)
+                ax2.set_ylabel("Count")
+                ax2.set_xlabel("Sentiment")
+                st.pyplot(fig2)
 
                 # Download option
                 csv = df.to_csv(index=False).encode("utf-8")
