@@ -1,30 +1,42 @@
 import streamlit as st
-import pandas as pd
-from src.sentiment import analyze_sentiment
+from transformers import pipeline
+import matplotlib.pyplot as plt
 
-st.title("🔍 Social Media Sentiment Analyzer")
+# Load sentiment analysis model (supports pos/neg/neutral)
+sentiment_pipeline = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment-latest"
+)
 
-option = st.radio("Choose input type:", ["Text", "CSV File"])
+# Streamlit App
+st.title("🌐 Web App Sentiment Analyzer")
+st.write("Enter text and see if it's Positive, Negative, or Neutral with confidence scores.")
 
-if option == "Text":
-    user_input = st.text_area("Enter text:")
-    if st.button("Analyze"):
-        if user_input.strip():
-            result = analyze_sentiment(user_input)
-            st.write("### 📊 Analysis Result")
-            st.write(f"**Text:** {result['text']}")
-            st.write(f"**Label:** {result['label']}")
-            st.write(f"**Score:** {result['score']:.2%}")
-else:
-    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        if "text" not in df.columns:
-            st.error("CSV must have a column named 'text'")
-        else:
-            df["Sentiment"] = df["text"].apply(
-                lambda x: analyze_sentiment(x)["label"]
-            )
-            st.write("### 📊 Results")
-            st.dataframe(df)
+text = st.text_area("Enter your text here:")
+
+if st.button("Analyze"):
+    results = sentiment_pipeline(text)
+
+    # Extract labels and scores
+    labels = [res['label'] for res in results]
+    scores = [res['score'] for res in results]
+
+    # Show results
+    st.subheader("📊 Analysis Result")
+    for label, score in zip(labels, scores):
+        st.write(f"**{label}:** {score*100:.2f}%")
+
+    # --- Visualization ---
+    st.subheader("📈 Sentiment Confidence")
+    fig, ax = plt.subplots()
+    ax.bar(labels, scores, color=["green", "red", "gray"])
+    ax.set_ylabel("Confidence")
+    ax.set_ylim(0, 1)
+
+    # Add percentages on bars
+    for i, v in enumerate(scores):
+        ax.text(i, v + 0.02, f"{v*100:.1f}%", ha="center")
+
+    st.pyplot(fig)
+
 
