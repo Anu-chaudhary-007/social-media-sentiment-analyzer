@@ -1,8 +1,7 @@
-
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
-import matplotlib.pyplot as plt
+import plotly.express as px
 
 # Load sentiment analysis pipeline
 sentiment_analyzer = pipeline("sentiment-analysis")
@@ -48,21 +47,31 @@ elif input_type == "CSV File":
                 st.dataframe(df)
 
                 # Sentiment distribution
-                sentiment_counts = df["label"].value_counts()
+                sentiment_counts = df["label"].value_counts().reset_index()
+                sentiment_counts.columns = ["Sentiment", "Count"]
 
-                # Pie chart
-                st.subheader("🍩 Sentiment Distribution (Pie Chart)")
-                fig1, ax1 = plt.subplots()
-                sentiment_counts.plot.pie(autopct="%.2f%%", ax=ax1, ylabel="")
-                st.pyplot(fig1)
+                # Interactive Pie Chart
+                st.subheader("🍩 Sentiment Distribution (Interactive Pie)")
+                pie_fig = px.pie(
+                    sentiment_counts,
+                    names="Sentiment",
+                    values="Count",
+                    hole=0.4,
+                    color="Sentiment",
+                )
+                st.plotly_chart(pie_fig, use_container_width=True)
 
-                # Bar chart
-                st.subheader("📊 Sentiment Distribution (Bar Chart)")
-                fig2, ax2 = plt.subplots()
-                sentiment_counts.plot.bar(ax=ax2)
-                ax2.set_ylabel("Count")
-                ax2.set_xlabel("Sentiment")
-                st.pyplot(fig2)
+                # Interactive Bar Chart
+                st.subheader("📊 Sentiment Distribution (Interactive Bar)")
+                bar_fig = px.bar(
+                    sentiment_counts,
+                    x="Sentiment",
+                    y="Count",
+                    color="Sentiment",
+                    text="Count",
+                )
+                bar_fig.update_traces(textposition="outside")
+                st.plotly_chart(bar_fig, use_container_width=True)
 
                 # Download option
                 csv = df.to_csv(index=False).encode("utf-8")
@@ -71,6 +80,8 @@ elif input_type == "CSV File":
                     data=csv,
                     file_name="sentiment_results.csv",
                     mime="text/csv",
+                )
+
                 )
 
 
