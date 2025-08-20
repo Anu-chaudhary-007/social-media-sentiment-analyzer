@@ -2,6 +2,14 @@ import streamlit as st
 from textblob import TextBlob
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+import os
+
+# 🔒 Fail-fast guard for Twitter API token
+TWITTER_BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", os.getenv("TWITTER_BEARER_TOKEN"))
+
+if not TWITTER_BEARER_TOKEN:
+    st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
+    st.stop()
 
 st.title("📊 Social Media Sentiment Analyzer")
 
