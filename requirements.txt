@@ -8,3 +8,4 @@ textblob
 flask
 streamlit
 matplotlib
+requests
