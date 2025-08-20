@@ -4,34 +4,31 @@ import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import os
 import tweepy
-from config import API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET
 
-# 🔒 Fail-fast guard for Twitter API token (OAuth2 bearer optional)
+# ---------------- Fail-fast guard for Twitter API ---------------- #
 TWITTER_BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", os.getenv("TWITTER_BEARER_TOKEN"))
 
 if not TWITTER_BEARER_TOKEN:
-    st.warning("⚠️ No TWITTER_BEARER_TOKEN found. Twitter API (OAuth2) features may not work.")
-    # Do not stop here, because we’re also supporting OAuth1 via config.py
+    st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
+    st.stop()
 
-
-# ---------------- Twitter fetch function ---------------- #
+# ---------------- Twitter fetch function (Bearer token) ---------------- #
 def fetch_tweets(query, count=10):
-    # Authenticate using OAuth1 (from config.py)
-    auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
-    api = tweepy.API(auth)
+    client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
 
-    # Search tweets
-    tweets = api.search_tweets(q=query, lang="en", count=count, tweet_mode="extended")
+    response = client.search_recent_tweets(
+        query=query,
+        max_results=min(count, 100),
+        tweet_fields=["text", "lang", "created_at"]
+    )
 
-    tweet_texts = []
-    for tweet in tweets:
-        if hasattr(tweet, "retweeted_status"):  # avoid retweets
-            text = tweet.retweeted_status.full_text
-        else:
-            text = tweet.full_text
-        tweet_texts.append(text)
+    tweets = []
+    if response.data:
+        for tweet in response.data:
+            if tweet.lang == "en":  # only English tweets
+                tweets.append(tweet.text)
 
-    return tweet_texts
+    return tweets
 
 
 # ---------------- Streamlit App ---------------- #
@@ -39,6 +36,7 @@ st.title("📊 Social Media Sentiment Analyzer")
 
 option = st.radio("Choose input method:", ["Manual Text", "Fetch Tweets"])
 
+# -------- Manual Text Analysis -------- #
 if option == "Manual Text":
     user_input = st.text_area("Enter text to analyze:")
 
@@ -57,7 +55,7 @@ if option == "Manual Text":
             st.write(f"**Sentiment:** {sentiment}")
             st.write(f"**Polarity Score:** {polarity:.2f}")
 
-            # Pie Chart with fixed labels & colors
+            # Pie Chart
             labels = ["Positive", "Negative", "Neutral"]
             sizes = [
                 1 if sentiment == "Positive" else 0,
@@ -67,7 +65,7 @@ if option == "Manual Text":
             colors = ['green', 'red', 'orange']
 
             fig1, ax1 = plt.subplots()
-            wedges, texts, autotexts = ax1.pie(
+            ax1.pie(
                 sizes,
                 labels=[l if s > 0 else "" for l, s in zip(labels, sizes)],  # hide 0% labels
                 autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else "",
@@ -78,16 +76,10 @@ if option == "Manual Text":
             st.pyplot(fig1)
 
             # Sentiment Meter (Gauge)
-            value = 0
-            if sentiment == "Positive":
-                value = 80
-            elif sentiment == "Neutral":
-                value = 50
-            elif sentiment == "Negative":
-                value = 20
+            value = {"Positive": 80, "Neutral": 50, "Negative": 20}[sentiment]
 
             gauge = go.Figure(go.Indicator(
-                mode="gauge+number+delta",
+                mode="gauge+number",
                 value=value,
                 title={'text': f"Sentiment Meter: {sentiment}"},
                 gauge={
@@ -105,10 +97,9 @@ if option == "Manual Text":
                     }
                 }
             ))
-
             st.plotly_chart(gauge)
 
-            # Add Emoji display
+            # Emoji feedback
             if sentiment == "Positive":
                 st.markdown("😊 **Great! People like this.**")
             elif sentiment == "Neutral":
@@ -117,6 +108,7 @@ if option == "Manual Text":
                 st.markdown("😡 **Oops! Negative reaction detected.**")
 
 
+# -------- Fetch Tweets & Analyze -------- #
 elif option == "Fetch Tweets":
     query = st.text_input("Enter a keyword or hashtag (e.g., #AI)")
     count = st.slider("Number of tweets to fetch", 5, 50, 10)
@@ -132,7 +124,7 @@ elif option == "Fetch Tweets":
                 for t in tweets:
                     st.write("-", t)
 
-                # Analyze all tweets
+                # Sentiment analysis for all tweets
                 sentiments = {"Positive": 0, "Negative": 0, "Neutral": 0}
                 for t in tweets:
                     analysis = TextBlob(t)
@@ -145,11 +137,16 @@ elif option == "Fetch Tweets":
                         sentiments["Neutral"] += 1
 
                 st.write("### 🧾 Sentiment Summary")
-                st.write(sentiments)
+                st.json(sentiments)
 
-                # Pie chart for tweets
+                # Pie chart
                 fig2, ax2 = plt.subplots()
-                ax2.pie(sentiments.values(), labels=sentiments.keys(), autopct='%1.1f%%', startangle=90,
-                        colors=['green', 'red', 'orange'])
+                ax2.pie(
+                    sentiments.values(),
+                    labels=sentiments.keys(),
+                    autopct='%1.1f%%',
+                    startangle=90,
+                    colors=['green', 'red', 'orange']
+                )
                 ax2.axis("equal")
                 st.pyplot(fig2)
