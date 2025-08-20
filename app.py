@@ -1,69 +1,47 @@
 import streamlit as st
-from transformers import pipeline
 import matplotlib.pyplot as plt
+from textblob import TextBlob
 
-# Load sentiment analysis pipeline (CPU only)
-sentiment_pipeline = pipeline(
-    "sentiment-analysis",
-    model="cardiffnlp/twitter-roberta-base-sentiment-latest",
-    device=-1
-)
-
-st.title("📊 Social Media Sentiment Analyzer")
-st.write("This app analyzes the sentiment of your text (Positive, Negative, Neutral).")
+# Streamlit app title
+st.title("Social Media Sentiment Analyzer")
 
 # Text input
-user_input = st.text_area("Enter your text here:")
+user_input = st.text_area("Enter text to analyze sentiment:")
 
-if st.button("Analyze Sentiment"):
-    if user_input.strip():
-        # Split input into sentences
-        sentences = [s.strip() for s in user_input.replace("?", ".").replace("!", ".").split(".") if s.strip()]
+if st.button("Analyze"):
+    if user_input.strip() == "":
+        st.warning("⚠️ Please enter some text!")
+    else:
+        # Sentiment analysis using TextBlob
+        analysis = TextBlob(user_input)
+        polarity = analysis.sentiment.polarity
 
-        results = sentiment_pipeline(sentences)
+        # Determine sentiment category
+        if polarity > 0:
+            sentiment = "Positive"
+        elif polarity < 0:
+            sentiment = "Negative"
+        else:
+            sentiment = "Neutral"
 
-        sentiment_counts = {"positive": 0, "negative": 0, "neutral": 0}
+        # Show results
+        st.subheader("🔍 Sentiment Result")
+        st.write(f"**Sentiment:** {sentiment}")
+        st.write(f"**Polarity Score:** {polarity:.2f}")
 
-        for sentence, result in zip(sentences, results):
-            label = result["label"].lower()
-            score = round(result["score"], 4)
+        # Sentiment counts (for pie chart demo, single input shown as one category)
+        sentiment_counts = {"Positive": 0, "Negative": 0, "Neutral": 0}
+        sentiment_counts[sentiment] += 1
 
-            if label == "positive":
-                color = "#4CAF50"  # green
-            elif label == "negative":
-                color = "#F44336"  # red
-            else:
-                color = "#FF9800"  # orange (neutral)
-
-            # Update counts
-            if label in sentiment_counts:
-                sentiment_counts[label] += 1
-
-            # Show each sentence result
-            st.markdown(f"**Sentence:** {sentence}")
-            st.markdown(f"<h4 style='color:{color};'>Sentiment: {label.capitalize()}</h4>", unsafe_allow_html=True)
-
-            # Custom progress bar
-            progress_html = f"""
-            <div style="border: 1px solid #ddd; border-radius: 8px; width: 100%; height: 20px;">
-                <div style="background-color:{color}; width:{score*100}%; height:100%; border-radius: 8px;"></div>
-            </div>
-            <p style="text-align:center;">Confidence: {score*100:.1f}%</p>
-            """
-            st.markdown(progress_html, unsafe_allow_html=True)
-            st.write("---")
-
-        # Show pie chart summary
-        st.subheader("📈 Overall Sentiment Distribution")
+        # Pie chart for sentiment distribution
         fig, ax = plt.subplots()
         ax.pie(
             sentiment_counts.values(),
-            labels=[k.capitalize() for k in sentiment_counts.keys()],
+            labels=sentiment_counts.keys(),
             autopct='%1.1f%%',
-            colors=["#4CAF50", "#F44336", "#FF9800"]
+            startangle=90,           # rotate chart for better alignment
+            pctdistance=0.85,        # move percentages closer to center
+            labeldistance=1.1        # move labels slightly outward
         )
-        ax.axis("equal")
+        ax.axis('equal')  # Equal aspect ratio ensures a perfect circle
         st.pyplot(fig)
-
-    else:
-        st.warning("⚠️ Please enter some text to analyze.")
