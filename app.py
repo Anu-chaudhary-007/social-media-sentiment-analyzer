@@ -12,8 +12,10 @@ if not TWITTER_BEARER_TOKEN:
     st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
     st.stop()
 
-# ---------------- Twitter fetch function (Bearer token) ---------------- #
+
+# ---------------- Twitter fetch function ---------------- #
 def fetch_tweets(query, count=10):
+    """Fetch recent tweets using Twitter API v2"""
     try:
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
 
@@ -36,6 +38,7 @@ def fetch_tweets(query, count=10):
 
 # ---------------- Sentiment Analysis Helper ---------------- #
 def analyze_sentiment(text):
+    """Return sentiment label and polarity score for a given text"""
     analysis = TextBlob(text)
     polarity = analysis.sentiment.polarity
 
@@ -45,6 +48,49 @@ def analyze_sentiment(text):
         return "Negative", polarity
     else:
         return "Neutral", polarity
+
+
+# ---------------- Visualization Helpers ---------------- #
+def plot_sentiment_pie(sentiment):
+    labels = ["Positive", "Negative", "Neutral"]
+    sizes = [1 if sentiment == l else 0 for l in labels]
+    colors = ["green", "red", "orange"]
+
+    fig, ax = plt.subplots()
+    ax.pie(
+        sizes,
+        labels=[l if s > 0 else "" for l, s in zip(labels, sizes)],
+        autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else "",
+        startangle=90,
+        colors=colors
+    )
+    ax.axis("equal")
+    return fig
+
+
+def plot_gauge(sentiment):
+    value = {"Positive": 80, "Neutral": 50, "Negative": 20}[sentiment]
+
+    gauge = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=value,
+        title={'text': f"Sentiment Meter: {sentiment}"},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "black"},
+            'steps': [
+                {'range': [0, 33], 'color': "red"},
+                {'range': [34, 66], 'color': "orange"},
+                {'range': [67, 100], 'color': "green"},
+            ],
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': value
+            }
+        }
+    ))
+    return gauge
 
 
 # ---------------- Streamlit App ---------------- #
@@ -66,49 +112,16 @@ if option == "Manual Text":
             st.write(f"**Sentiment:** {sentiment}")
             st.write(f"**Polarity Score:** {polarity:.2f}")
 
-            # Pie Chart
-            labels = ["Positive", "Negative", "Neutral"]
-            sizes = [1 if sentiment == l else 0 for l in labels]
-            colors = ["green", "red", "orange"]
-
-            fig1, ax1 = plt.subplots()
-            ax1.pie(
-                sizes,
-                labels=[l if s > 0 else "" for l, s in zip(labels, sizes)],
-                autopct=lambda pct: f"{pct:.1f}%" if pct > 0 else "",
-                startangle=90,
-                colors=colors
-            )
-            ax1.axis("equal")
-            st.pyplot(fig1)
-
-            # Sentiment Meter
-            value = {"Positive": 80, "Neutral": 50, "Negative": 20}[sentiment]
-            gauge = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=value,
-                title={'text': f"Sentiment Meter: {sentiment}"},
-                gauge={
-                    'axis': {'range': [0, 100]},
-                    'bar': {'color': "black"},
-                    'steps': [
-                        {'range': [0, 33], 'color': "red"},
-                        {'range': [34, 66], 'color': "orange"},
-                        {'range': [67, 100], 'color': "green"},
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': value
-                    }
-                }
-            ))
-            st.plotly_chart(gauge)
+            # Visuals
+            st.pyplot(plot_sentiment_pie(sentiment))
+            st.plotly_chart(plot_gauge(sentiment))
 
             # Emoji Feedback
-            emoji_map = {"Positive": "😊 **Great! People like this.**",
-                         "Neutral": "😐 **It’s okay, neutral vibes.**",
-                         "Negative": "😡 **Oops! Negative reaction detected.**"}
+            emoji_map = {
+                "Positive": "😊 **Great! People like this.**",
+                "Neutral": "😐 **It’s okay, neutral vibes.**",
+                "Negative": "😡 **Oops! Negative reaction detected.**"
+            }
             st.markdown(emoji_map[sentiment])
         else:
             st.warning("⚠️ Please enter some text.")
@@ -157,3 +170,4 @@ elif option == "Fetch Tweets":
                 )
                 ax2.axis("equal")
                 st.pyplot(fig2)
+
