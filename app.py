@@ -1,9 +1,9 @@
 import streamlit as st
-from textblob import TextBlob
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import os
 import tweepy
+import requests
 
 # ---------------- Fail-fast guard for Twitter API ---------------- #
 TWITTER_BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", os.getenv("TWITTER_BEARER_TOKEN"))
@@ -11,6 +11,32 @@ TWITTER_BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", os.getenv("TWITTER
 if not TWITTER_BEARER_TOKEN:
     st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
     st.stop()
+
+# ---------------- Hugging Face API ---------------- #
+HF_API_URL = "https://api-inference.huggingface.co/models/finiteautomata/bertweet-base-sentiment-analysis"
+HF_HEADERS = {"Authorization": "Bearer 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"}   # your token
+
+def analyze_sentiment(text):
+    """Use Hugging Face API for sentiment analysis"""
+    try:
+        payload = {"inputs": text}
+        response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload)
+
+        if response.status_code != 200:
+            return "Error", 0.0
+
+        result = response.json()
+        if isinstance(result, list) and len(result) > 0:
+            best = max(result[0], key=lambda x: x['score'])
+            label = best["label"]
+            score = best["score"]
+
+            label_map = {"POS": "Positive", "NEG": "Negative", "NEU": "Neutral"}
+            return label_map.get(label, label), score
+        else:
+            return "Error", 0.0
+    except Exception as e:
+        return "Error", 0.0
 
 
 # ---------------- Twitter fetch function ---------------- #
@@ -36,20 +62,6 @@ def fetch_tweets(query, count=10):
         return [], f"⚠️ Error fetching tweets: {str(e)}"
 
 
-# ---------------- Sentiment Analysis Helper ---------------- #
-def analyze_sentiment(text):
-    """Return sentiment label and polarity score for a given text"""
-    analysis = TextBlob(text)
-    polarity = analysis.sentiment.polarity
-
-    if polarity > 0:
-        return "Positive", polarity
-    elif polarity < 0:
-        return "Negative", polarity
-    else:
-        return "Neutral", polarity
-
-
 # ---------------- Visualization Helpers ---------------- #
 def plot_sentiment_pie(sentiment):
     labels = ["Positive", "Negative", "Neutral"]
@@ -69,7 +81,7 @@ def plot_sentiment_pie(sentiment):
 
 
 def plot_gauge(sentiment):
-    value = {"Positive": 80, "Neutral": 50, "Negative": 20}[sentiment]
+    value = {"Positive": 80, "Neutral": 50, "Negative": 20}.get(sentiment, 50)
 
     gauge = go.Figure(go.Indicator(
         mode="gauge+number",
@@ -96,7 +108,7 @@ def plot_gauge(sentiment):
 # ---------------- Streamlit App ---------------- #
 st.set_page_config(page_title="📊 Social Media Sentiment Analyzer", page_icon="📈", layout="centered")
 st.title("📊 Social Media Sentiment Analyzer")
-st.caption("Analyze sentiments from manual text or live tweets (via Twitter API).")
+st.caption("Analyze sentiments from manual text or live tweets (via Twitter API & Hugging Face).")
 
 option = st.radio("Choose input method:", ["Manual Text", "Fetch Tweets"])
 
@@ -106,23 +118,24 @@ if option == "Manual Text":
 
     if st.button("🔍 Analyze"):
         if user_input.strip():
-            sentiment, polarity = analyze_sentiment(user_input)
+            sentiment, score = analyze_sentiment(user_input)
 
             st.subheader("📌 Sentiment Result")
             st.write(f"**Sentiment:** {sentiment}")
-            st.write(f"**Polarity Score:** {polarity:.2f}")
+            st.write(f"**Confidence Score:** {score:.2f}")
 
             # Visuals
-            st.pyplot(plot_sentiment_pie(sentiment))
-            st.plotly_chart(plot_gauge(sentiment))
+            if sentiment in ["Positive", "Negative", "Neutral"]:
+                st.pyplot(plot_sentiment_pie(sentiment))
+                st.plotly_chart(plot_gauge(sentiment))
 
-            # Emoji Feedback
-            emoji_map = {
-                "Positive": "😊 **Great! People like this.**",
-                "Neutral": "😐 **It’s okay, neutral vibes.**",
-                "Negative": "😡 **Oops! Negative reaction detected.**"
-            }
-            st.markdown(emoji_map[sentiment])
+                # Emoji Feedback
+                emoji_map = {
+                    "Positive": "😊 **Great! People like this.**",
+                    "Neutral": "😐 **It’s okay, neutral vibes.**",
+                    "Negative": "😡 **Oops! Negative reaction detected.**"
+                }
+                st.markdown(emoji_map[sentiment])
         else:
             st.warning("⚠️ Please enter some text.")
 
@@ -154,7 +167,8 @@ elif option == "Fetch Tweets":
                 sentiments = {"Positive": 0, "Negative": 0, "Neutral": 0}
                 for t in tweets:
                     s, _ = analyze_sentiment(t)
-                    sentiments[s] += 1
+                    if s in sentiments:
+                        sentiments[s] += 1
 
                 st.subheader("🧾 Sentiment Summary")
                 st.json(sentiments)
@@ -170,4 +184,3 @@ elif option == "Fetch Tweets":
                 )
                 ax2.axis("equal")
                 st.pyplot(fig2)
-
