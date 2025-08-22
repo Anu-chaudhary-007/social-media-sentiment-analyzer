@@ -9,3 +9,4 @@ flask
 streamlit
 matplotlib
 requests
+huggingface_hub
