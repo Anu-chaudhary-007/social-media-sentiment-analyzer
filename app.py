@@ -17,36 +17,27 @@ if not TWITTER_BEARER_TOKEN:
     st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
     st.stop()
 
-# Hugging Face token
-# Best practice: put this in Streamlit Secrets as HF_API_TOKEN
+# Hugging Face token (MUST be set in secrets)
 HF_API_TOKEN = st.secrets.get("HF_API_TOKEN", os.getenv("HF_API_TOKEN"))
-# TEMP fallback so it works right now (replace with secrets ASAP)
 if not HF_API_TOKEN:
-    HF_API_TOKEN = "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"
+    st.error("❌ Missing HF_API_TOKEN. Add it in Streamlit Secrets or as an env var.")
+    st.stop()
 
 HF_API_URL = "https://api-inference.huggingface.co/models/finiteautomata/bertweet-base-sentiment-analysis"
 
 # ---------------- Hugging Face helper ---------------- #
 def analyze_sentiment(text, retries=3, timeout=30):
-    """
-    Call HF Inference API for sentiment.
-    Returns: (label, score, error) where error is None on success.
-    """
     headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
     payload = {
         "inputs": text,
-        "options": {
-            "wait_for_model": True,   # block until model is ready (fixes cold start)
-            "use_cache": True
-        }
+        "options": {"wait_for_model": True, "use_cache": True}
     }
 
     for attempt in range(1, retries + 1):
         try:
             resp = requests.post(HF_API_URL, headers=headers, json=payload, timeout=timeout)
-            # Handle transient states & rate limiting
+
             if resp.status_code in (503, 429):
-                # Model loading or rate limit — brief backoff then retry
                 time.sleep(2 * attempt)
                 continue
             if resp.status_code != 200:
@@ -54,18 +45,13 @@ def analyze_sentiment(text, retries=3, timeout=30):
 
             data = resp.json()
 
-            # Possible shapes:
-            # [[{"label":"POS","score":0.98}, {"label":"NEG","score":0.01}, {"label":"NEU","score":0.01}]]
-            # [{"label":"POS","score":0.98}, ...]   (some clients)
-            # {"error": "..."}                      (fail)
+            # Handle error responses
             if isinstance(data, dict) and "error" in data:
-                # e.g., model loading message despite 200
                 time.sleep(2 * attempt)
                 continue
 
             if isinstance(data, list) and len(data) > 0:
                 candidates = data[0] if isinstance(data[0], list) else data
-                # pick highest score
                 best = max(candidates, key=lambda x: x.get("score", 0.0))
 
                 raw_label = best.get("label", "")
@@ -76,21 +62,18 @@ def analyze_sentiment(text, retries=3, timeout=30):
                 if raw_label in map_3:
                     label = map_3[raw_label]
                 elif raw_label.upper().startswith("LABEL_"):
-                    # Just in case the model returns LABEL_0/1/2 ordering
-                    # We map to NEG/NEU/POS in that order, common in some datasets
                     idx = int(raw_label.split("_")[-1])
                     label = ["Negative", "Neutral", "Positive"][idx] if idx in (0, 1, 2) else "Neutral"
                 else:
-                    # Fallback: try to infer from text
                     u = raw_label.upper()
                     if "POS" in u: label = "Positive"
                     elif "NEG" in u: label = "Negative"
                     elif "NEU" in u: label = "Neutral"
-                    else: label = raw_label  # unknown label, show as-is
+                    else: label = raw_label
 
                 return label, score, None
 
-            return "Error", 0.0, "Unexpected response format from Hugging Face."
+            return "Error", 0.0, "Unexpected response format."
         except requests.RequestException as e:
             if attempt == retries:
                 return "Error", 0.0, f"Request failed: {e}"
@@ -100,7 +83,6 @@ def analyze_sentiment(text, retries=3, timeout=30):
 
 # ---------------- Twitter fetch function ---------------- #
 def fetch_tweets(query, count=10):
-    """Fetch recent English tweets using Twitter API v2"""
     try:
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
         response = client.search_recent_tweets(
