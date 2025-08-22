@@ -1,50 +1,108 @@
-import streamlit as st
+import os
+import time
+import requests
+import tweepy
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-import os
-import tweepy
-import requests
+import streamlit as st
 
-# ---------------- Fail-fast guard for Twitter API ---------------- #
+# ---------------- Config & Secrets ---------------- #
+st.set_page_config(page_title="📊 Social Media Sentiment Analyzer", page_icon="📈", layout="centered")
+st.title("📊 Social Media Sentiment Analyzer")
+st.caption("Analyze sentiments from manual text or live tweets (Twitter API) using a Hugging Face model.")
+
+# Twitter (X) Bearer Token
 TWITTER_BEARER_TOKEN = st.secrets.get("TWITTER_BEARER_TOKEN", os.getenv("TWITTER_BEARER_TOKEN"))
-
 if not TWITTER_BEARER_TOKEN:
     st.error("❌ Missing TWITTER_BEARER_TOKEN. Add it in Streamlit Secrets or as an env var.")
     st.stop()
 
-# ---------------- Hugging Face API ---------------- #
+# Hugging Face token
+# Best practice: put this in Streamlit Secrets as HF_API_TOKEN
+HF_API_TOKEN = st.secrets.get("HF_API_TOKEN", os.getenv("HF_API_TOKEN"))
+# TEMP fallback so it works right now (replace with secrets ASAP)
+if not HF_API_TOKEN:
+    HF_API_TOKEN = "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"
+
 HF_API_URL = "https://api-inference.huggingface.co/models/finiteautomata/bertweet-base-sentiment-analysis"
-HF_HEADERS = {"Authorization": "Bearer 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"}   # your token
 
-def analyze_sentiment(text):
-    """Use Hugging Face API for sentiment analysis"""
-    try:
-        payload = {"inputs": text}
-        response = requests.post(HF_API_URL, headers=HF_HEADERS, json=payload)
+# ---------------- Hugging Face helper ---------------- #
+def analyze_sentiment(text, retries=3, timeout=30):
+    """
+    Call HF Inference API for sentiment.
+    Returns: (label, score, error) where error is None on success.
+    """
+    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    payload = {
+        "inputs": text,
+        "options": {
+            "wait_for_model": True,   # block until model is ready (fixes cold start)
+            "use_cache": True
+        }
+    }
 
-        if response.status_code != 200:
-            return "Error", 0.0
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.post(HF_API_URL, headers=headers, json=payload, timeout=timeout)
+            # Handle transient states & rate limiting
+            if resp.status_code in (503, 429):
+                # Model loading or rate limit — brief backoff then retry
+                time.sleep(2 * attempt)
+                continue
+            if resp.status_code != 200:
+                return "Error", 0.0, f"{resp.status_code}: {resp.text}"
 
-        result = response.json()
-        if isinstance(result, list) and len(result) > 0:
-            best = max(result[0], key=lambda x: x['score'])
-            label = best["label"]
-            score = best["score"]
+            data = resp.json()
 
-            label_map = {"POS": "Positive", "NEG": "Negative", "NEU": "Neutral"}
-            return label_map.get(label, label), score
-        else:
-            return "Error", 0.0
-    except Exception as e:
-        return "Error", 0.0
+            # Possible shapes:
+            # [[{"label":"POS","score":0.98}, {"label":"NEG","score":0.01}, {"label":"NEU","score":0.01}]]
+            # [{"label":"POS","score":0.98}, ...]   (some clients)
+            # {"error": "..."}                      (fail)
+            if isinstance(data, dict) and "error" in data:
+                # e.g., model loading message despite 200
+                time.sleep(2 * attempt)
+                continue
 
+            if isinstance(data, list) and len(data) > 0:
+                candidates = data[0] if isinstance(data[0], list) else data
+                # pick highest score
+                best = max(candidates, key=lambda x: x.get("score", 0.0))
+
+                raw_label = best.get("label", "")
+                score = float(best.get("score", 0.0))
+
+                # Normalize labels
+                map_3 = {"POS": "Positive", "NEG": "Negative", "NEU": "Neutral"}
+                if raw_label in map_3:
+                    label = map_3[raw_label]
+                elif raw_label.upper().startswith("LABEL_"):
+                    # Just in case the model returns LABEL_0/1/2 ordering
+                    # We map to NEG/NEU/POS in that order, common in some datasets
+                    idx = int(raw_label.split("_")[-1])
+                    label = ["Negative", "Neutral", "Positive"][idx] if idx in (0, 1, 2) else "Neutral"
+                else:
+                    # Fallback: try to infer from text
+                    u = raw_label.upper()
+                    if "POS" in u: label = "Positive"
+                    elif "NEG" in u: label = "Negative"
+                    elif "NEU" in u: label = "Neutral"
+                    else: label = raw_label  # unknown label, show as-is
+
+                return label, score, None
+
+            return "Error", 0.0, "Unexpected response format from Hugging Face."
+        except requests.RequestException as e:
+            if attempt == retries:
+                return "Error", 0.0, f"Request failed: {e}"
+            time.sleep(2 * attempt)
+
+    return "Error", 0.0, "Failed after retries."
 
 # ---------------- Twitter fetch function ---------------- #
 def fetch_tweets(query, count=10):
-    """Fetch recent tweets using Twitter API v2"""
+    """Fetch recent English tweets using Twitter API v2"""
     try:
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
-
         response = client.search_recent_tweets(
             query=query,
             max_results=min(count, 100),
@@ -54,13 +112,12 @@ def fetch_tweets(query, count=10):
         tweets = []
         if response.data:
             for tweet in response.data:
-                if tweet.lang == "en":  # only English tweets
+                if getattr(tweet, "lang", "en") == "en":
                     tweets.append(tweet.text)
 
         return tweets, None
     except Exception as e:
         return [], f"⚠️ Error fetching tweets: {str(e)}"
-
 
 # ---------------- Visualization Helpers ---------------- #
 def plot_sentiment_pie(sentiment):
@@ -79,10 +136,8 @@ def plot_sentiment_pie(sentiment):
     ax.axis("equal")
     return fig
 
-
 def plot_gauge(sentiment):
     value = {"Positive": 80, "Neutral": 50, "Negative": 20}.get(sentiment, 50)
-
     gauge = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
@@ -95,53 +150,41 @@ def plot_gauge(sentiment):
                 {'range': [34, 66], 'color': "orange"},
                 {'range': [67, 100], 'color': "green"},
             ],
-            'threshold': {
-                'line': {'color': "black", 'width': 4},
-                'thickness': 0.75,
-                'value': value
-            }
+            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': value}
         }
     ))
     return gauge
 
-
-# ---------------- Streamlit App ---------------- #
-st.set_page_config(page_title="📊 Social Media Sentiment Analyzer", page_icon="📈", layout="centered")
-st.title("📊 Social Media Sentiment Analyzer")
-st.caption("Analyze sentiments from manual text or live tweets (via Twitter API & Hugging Face).")
-
+# ---------------- UI ---------------- #
 option = st.radio("Choose input method:", ["Manual Text", "Fetch Tweets"])
 
-# -------- Manual Text Analysis -------- #
+# Manual
 if option == "Manual Text":
     user_input = st.text_area("✍️ Enter text to analyze:")
 
     if st.button("🔍 Analyze"):
         if user_input.strip():
-            sentiment, score = analyze_sentiment(user_input)
-
+            label, score, err = analyze_sentiment(user_input)
             st.subheader("📌 Sentiment Result")
-            st.write(f"**Sentiment:** {sentiment}")
-            st.write(f"**Confidence Score:** {score:.2f}")
 
-            # Visuals
-            if sentiment in ["Positive", "Negative", "Neutral"]:
-                st.pyplot(plot_sentiment_pie(sentiment))
-                st.plotly_chart(plot_gauge(sentiment))
-
-                # Emoji Feedback
-                emoji_map = {
+            if err:
+                st.error(f"❌ Hugging Face API error: {err}")
+                st.write("Confidence Score: 0.00")
+            else:
+                st.write(f"**Sentiment:** {label}")
+                st.write(f"**Confidence Score:** {score:.2f}")
+                st.pyplot(plot_sentiment_pie(label))
+                st.plotly_chart(plot_gauge(label))
+                st.markdown({
                     "Positive": "😊 **Great! People like this.**",
-                    "Neutral": "😐 **It’s okay, neutral vibes.**",
+                    "Neutral":  "😐 **It’s okay, neutral vibes.**",
                     "Negative": "😡 **Oops! Negative reaction detected.**"
-                }
-                st.markdown(emoji_map[sentiment])
+                }[label])
         else:
             st.warning("⚠️ Please enter some text.")
 
-
-# -------- Fetch Tweets & Analyze -------- #
-elif option == "Fetch Tweets":
+# Tweets
+else:
     query = st.text_input("🔑 Enter a keyword or hashtag (e.g., #AI)")
     count = st.slider("Number of tweets to fetch", 5, 50, 10)
 
@@ -158,22 +201,26 @@ elif option == "Fetch Tweets":
                 st.error("⚠️ No tweets found for this query.")
             else:
                 st.success(f"✅ Fetched {len(tweets)} recent tweets for '{query}'")
-
                 st.subheader("📌 Sample Tweets")
                 for i, t in enumerate(tweets[:5], 1):
                     st.write(f"**Tweet {i}:** {t}")
 
-                # Sentiment analysis for all tweets
+                # Batch sentiment
                 sentiments = {"Positive": 0, "Negative": 0, "Neutral": 0}
+                errors = 0
                 for t in tweets:
-                    s, _ = analyze_sentiment(t)
-                    if s in sentiments:
-                        sentiments[s] += 1
+                    label, _, err = analyze_sentiment(t)
+                    if err:
+                        errors += 1
+                        continue
+                    if label in sentiments:
+                        sentiments[label] += 1
 
                 st.subheader("🧾 Sentiment Summary")
                 st.json(sentiments)
+                if errors:
+                    st.info(f"ℹ️ {errors} tweet(s) could not be analyzed due to API throttling or loading. Try again.")
 
-                # Pie Chart
                 fig2, ax2 = plt.subplots()
                 ax2.pie(
                     sentiments.values(),
