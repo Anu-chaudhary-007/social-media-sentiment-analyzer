@@ -22,7 +22,7 @@ if not TWITTER_BEARER_TOKEN:
 HF_API_TOKEN = st.secrets.get("HF_API_TOKEN", os.getenv("HF_API_TOKEN"))
 # TEMP fallback so it works right now (replace with secrets ASAP)
 if not HF_API_TOKEN:
-    HF_API_TOKEN = "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"
+    HF_API_TOKEN = "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"
 
 HF_API_URL = "https://api-inference.huggingface.co/models/finiteautomata/bertweet-base-sentiment-analysis"
 
