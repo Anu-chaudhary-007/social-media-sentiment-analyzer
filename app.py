@@ -168,7 +168,7 @@ if option == "Manual Text":
 # Tweets
 else:
     query = st.text_input("🔑 Enter a keyword or hashtag (e.g., #AI)")
-    count = st.slider("Number of tweets to fetch", 5, 20, 10)
+    count = st.slider("Number of tweets to fetch", 10, 20, 10)
 
     if st.button("📥 Fetch & Analyze Tweets"):
         if not query.strip():
