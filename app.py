@@ -87,7 +87,7 @@ def fetch_tweets(query, count=10):
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
         response = client.search_recent_tweets(
             query=query,
-            max_results=min(count, 100),
+            max_results=min(count, 20),
             tweet_fields=["text", "lang", "created_at"]
         )
 
