@@ -1,4 +1,4 @@
-import os
+  import os
 import time
 import requests
 import tweepy
@@ -87,7 +87,7 @@ def fetch_tweets(query, count=10):
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
         response = client.search_recent_tweets(
             query=query,
-            max_results=min(count, 100),
+            max_results=min(count, 20),
             tweet_fields=["text", "lang", "created_at"]
         )
 
@@ -159,7 +159,7 @@ if option == "Manual Text":
                 st.plotly_chart(plot_gauge(label))
                 st.markdown({
                     "Positive": "😊 **Great! People like this.**",
-                    "Neutral":  "😐 **It’s okay, neutral vibes.**",
+                    "Neutral":  "😐 **It's okay, neutral vibes.**",
                     "Negative": "😡 **Oops! Negative reaction detected.**"
                 }[label])
         else:
@@ -168,7 +168,7 @@ if option == "Manual Text":
 # Tweets
 else:
     query = st.text_input("🔑 Enter a keyword or hashtag (e.g., #AI)")
-    count = st.slider("Number of tweets to fetch", 5, 50, 10)
+    count = st.slider("Number of tweets to fetch", 5, 20, 10)
 
     if st.button("📥 Fetch & Analyze Tweets"):
         if not query.strip():
