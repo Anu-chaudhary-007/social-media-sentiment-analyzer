@@ -1,4 +1,4 @@
-import os
+  import os
 import time
 import requests
 import tweepy
@@ -87,7 +87,7 @@ def fetch_tweets(query, count=10):
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
         response = client.search_recent_tweets(
             query=query,
-            max_results=min(count, 20),
+            max_results=count,  # Use the exact count since we're limiting the slider to 10-20
             tweet_fields=["text", "lang", "created_at"]
         )
 
@@ -168,7 +168,8 @@ if option == "Manual Text":
 # Tweets
 else:
     query = st.text_input("🔑 Enter a keyword or hashtag (e.g., #AI)")
-    count = st.slider("Number of tweets to fetch", 10, 20, 10)
+    count = st.slider("Number of tweets to fetch", 10, 20, 10)  # Changed to 10-20 range
+    st.caption("Twitter API requires between 10-100 tweets per request")
 
     if st.button("📥 Fetch & Analyze Tweets"):
         if not query.strip():
