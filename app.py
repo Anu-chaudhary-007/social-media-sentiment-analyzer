@@ -87,7 +87,7 @@ def fetch_tweets(query, count=10):
         client = tweepy.Client(bearer_token=TWITTER_BEARER_TOKEN)
         response = client.search_recent_tweets(
             query=query,
-            max_results=count,  # Use the exact count since we're limiting the slider to 10-20
+            max_results=count,
             tweet_fields=["text", "lang", "created_at"]
         )
 
@@ -118,8 +118,16 @@ def plot_sentiment_pie(sentiment):
     ax.axis("equal")
     return fig
 
-def plot_gauge(sentiment):
-    value = {"Positive": 80, "Neutral": 50, "Negative": 20}.get(sentiment, 50)
+def plot_gauge(sentiment, score):
+    scaled_score = score * 100  
+
+    if sentiment == "Positive":
+        value = scaled_score
+    elif sentiment == "Negative":
+        value = 100 - scaled_score   # lower value for stronger negatives
+    else:  # Neutral → map to 40–60 range
+        value = 40 + (score * 20)   # 0 → 40, 1 → 60
+
     gauge = go.Figure(go.Indicator(
         mode="gauge+number",
         value=value,
@@ -132,7 +140,11 @@ def plot_gauge(sentiment):
                 {'range': [34, 66], 'color': "orange"},
                 {'range': [67, 100], 'color': "green"},
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'thickness': 0.75, 'value': value}
+            'threshold': {
+                'line': {'color': "black", 'width': 4},
+                'thickness': 0.75,
+                'value': value
+            }
         }
     ))
     return gauge
@@ -156,7 +168,7 @@ if option == "Manual Text":
                 st.write(f"**Sentiment:** {label}")
                 st.write(f"**Confidence Score:** {score:.2f}")
                 st.pyplot(plot_sentiment_pie(label))
-                st.plotly_chart(plot_gauge(label))
+                st.plotly_chart(plot_gauge(label, score))
                 st.markdown({
                     "Positive": "😊 **Great! People like this.**",
                     "Neutral":  "😐 **It's okay, neutral vibes.**",
@@ -168,7 +180,7 @@ if option == "Manual Text":
 # Tweets
 else:
     query = st.text_input("🔑 Enter a keyword or hashtag (e.g., #AI)")
-    count = st.slider("Number of tweets to fetch", 10, 20, 10)  # Changed to 10-20 range
+    count = st.slider("Number of tweets to fetch", 10, 20, 10)
     st.caption("Twitter API requires between 10-100 tweets per request")
 
     if st.button("📥 Fetch & Analyze Tweets"):
